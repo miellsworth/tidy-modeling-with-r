@@ -1,0 +1,356 @@
+library(tidymodels)
+data(ames)
+
+# View data ----
+# Plot Sale Price
+ames %>% 
+  ggplot(aes(x = Sale_Price)) + 
+  geom_histogram(bins = 50, col= "white")
+
+# Log Transform Sale Price
+ames <- ames %>% mutate(Sale_Price = log10(Sale_Price))
+
+# Plot transformed sale price
+ames %>%
+  ggplot(aes(x = Sale_Price)) +
+  geom_histogram()
+
+# End of chapter 4 code ----
+library(tidymodels)
+data(ames)
+ames <- ames %>% mutate(Sale_Price = log10(Sale_Price))
+
+# Split data ----
+# Split data into training and testing data
+set.seed(502)
+ames_split <- initial_split(ames, prop = 0.80, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <-  testing(ames_split)
+
+# End of chapter 5 code ----
+library(tidymodels)
+data(ames)
+ames <- ames %>% mutate(Sale_Price = log10(Sale_Price))
+
+set.seed(502)
+ames_split <- initial_split(ames, prop = 0.80, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <-  testing(ames_split)
+
+# Create model ----
+# Predicting sales price
+lm_model <- 
+  linear_reg() %>% 
+  set_engine("lm")
+
+lm_form_fit <- 
+  lm_model %>% 
+  # Recall that Sale_Price has been pre-logged
+  fit(Sale_Price ~ Longitude + Latitude, data = ames_train)
+
+lm_xy_fit <- 
+  lm_model %>% 
+  fit_xy(
+    x = ames_train %>% select(Longitude, Latitude),
+    y = ames_train %>% pull(Sale_Price)
+  )
+
+lm_form_fit
+lm_xy_fit
+
+# View model results ----
+
+model_res <- 
+  lm_form_fit %>% 
+  extract_fit_engine() %>% 
+  summary()
+
+# The model coefficient table is accessible via the `coef` method.
+param_est <- coef(model_res)
+class(param_est)
+param_est
+
+# View results in tidy format
+tidy(lm_form_fit)
+
+# End of chapter 6 code ----
+library(tidymodels)
+data(ames)
+ames <- mutate(ames, Sale_Price = log10(Sale_Price))
+
+set.seed(502)
+ames_split <- initial_split(ames, prop = 0.80, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <-  testing(ames_split)
+
+lm_model <- linear_reg() %>% set_engine("lm")
+
+# Creating a workflow ----
+lm_wflow <- 
+  workflow() %>% 
+  add_model(lm_model)
+
+lm_wflow
+
+# Add preprocessor
+lm_wflow <- 
+  lm_wflow %>% 
+  add_formula(Sale_Price ~ Longitude + Latitude)
+
+lm_wflow
+
+# Fit
+lm_fit <- fit(lm_wflow, ames_train)
+lm_fit
+
+# Predict
+predict(lm_fit, ames_test %>% slice(1:3))
+
+# Update preprocessor
+lm_fit %>% update_formula(Sale_Price ~ Longitude)
+
+# Add variables to the workflow ----
+lm_wflow <- 
+  lm_wflow %>% 
+  remove_formula() %>% 
+  add_variables(outcome = Sale_Price, predictors = c(Longitude, Latitude))
+lm_wflow
+
+# Special formulas ----
+library(multilevelmod)
+
+multilevel_spec <- linear_reg() %>% set_engine("lmer")
+
+multilevel_workflow <- 
+  workflow() %>% 
+  # Pass the data along as-is: 
+  add_variables(outcome = distance, predictors = c(Sex, age, Subject)) %>% 
+  add_model(multilevel_spec, 
+            # This formula is given to the model
+            formula = distance ~ Sex + (age | Subject))
+
+multilevel_fit <- fit(multilevel_workflow, data = Orthodont)
+multilevel_fit
+
+# Workflow sets ----
+library(workflowsets)
+
+location <- list(
+  longitude = Sale_Price ~ Longitude,
+  latitude = Sale_Price ~ Latitude,
+  coords = Sale_Price ~ Longitude + Latitude,
+  neighborhood = Sale_Price ~ Neighborhood
+)
+
+location_models <- workflow_set(preproc = location, models = list(lm = lm_model))
+location_models
+
+location_models <-
+  location_models %>%
+  mutate(fit = map(info, ~ fit(.x$workflow[[1]], ames_train)))
+location_models
+
+# Evaluating the test set ----
+final_lm_res <- last_fit(lm_wflow, ames_split)
+final_lm_res
+
+fitted_lm_wflow <- extract_workflow(final_lm_res)
+collect_metrics(final_lm_res)
+collect_predictions(final_lm_res) %>% slice(1:5)
+
+# End of chapter 7 code ----
+library(tidymodels)
+data(ames)
+
+ames <- mutate(ames, Sale_Price = log10(Sale_Price))
+
+set.seed(502)
+ames_split <- initial_split(ames, prop = 0.80, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <-  testing(ames_split)
+
+lm_model <- linear_reg() %>% set_engine("lm")
+
+lm_wflow <- 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_variables(outcome = Sale_Price, predictors = c(Longitude, Latitude))
+
+lm_fit <- fit(lm_wflow, ames_train)
+
+# Creating a recipe ----
+library(tidymodels) # Includes the recipes package
+tidymodels_prefer()
+
+simple_ames <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type,
+         data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_dummy(all_nominal_predictors())
+simple_ames
+
+# Adding a recipe to the workflow
+lm_wflow <- 
+  lm_wflow %>% 
+  remove_variables() %>%  # Remove existing preprocessor
+  add_recipe(simple_ames)
+lm_wflow
+
+lm_fit <- fit(lm_wflow, ames_train)
+predict(lm_fit, ames_test %>% slice(1:3))
+
+# Get the recipe after it has been estimated:
+lm_fit %>% 
+  extract_recipe(estimated = TRUE)
+
+# To tidy the model fit: 
+lm_fit %>% 
+  # This returns the parsnip object:
+  extract_fit_parsnip() %>% 
+  # Now tidy the linear model object:
+  tidy() %>% 
+  slice(1:5)
+
+# Create a new "other" level for neighbourhoods
+simple_ames <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type,
+         data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = 0.01) %>%  # Groups bottom 1% of neighbourhoods
+  step_dummy(all_nominal_predictors())
+
+# Plot relationship gross living area and building type
+ggplot(ames_train, aes(x = Gr_Liv_Area, y = 10^Sale_Price)) + 
+  geom_point(alpha = .2) + 
+  facet_wrap(~ Bldg_Type) + 
+  geom_smooth(method = lm, formula = y ~ x, se = FALSE, color = "lightblue") + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  labs(x = "Gross Living Area", y = "Sale Price (USD)")
+
+# Create an interaction term using step_interact
+simple_ames <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type,
+         data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = 0.01) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  # Gr_Liv_Area is on the log scale from a previous step
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") )
+
+# Create an extended recipe to tidy
+ames_rec <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = 0.01) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+tidy(ames_rec)
+
+# Creating roles
+ames_rec %>% update_role(address, new_role = "street address")
+
+# End of chapter 8 code ----
+library(tidymodels)
+data(ames)
+ames <- mutate(ames, Sale_Price = log10(Sale_Price))
+
+set.seed(502)
+ames_split <- initial_split(ames, prop = 0.80, strata = Sale_Price)
+ames_train <- training(ames_split)
+ames_test  <-  testing(ames_split)
+
+ames_rec <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = 0.01) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+lm_model <- linear_reg() %>% set_engine("lm")
+
+lm_wflow <- 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_rec)
+
+lm_fit <- fit(lm_wflow, ames_train)
+
+# Produce predictions and evaluate results
+ames_test_res <- predict(lm_fit, new_data = ames_test %>% select(-Sale_Price))
+ames_test_res
+
+ames_test_res <- bind_cols(ames_test_res, ames_test %>% select(Sale_Price))
+ames_test_res
+
+ggplot(ames_test_res, aes(x = Sale_Price, y = .pred)) + 
+  # Create a diagonal line:
+  geom_abline(lty = 2) + 
+  geom_point(alpha = 0.5) + 
+  labs(y = "Predicted Sale Price (log10)", x = "Sale Price (log10)") +
+  # Scale and size the x- and y-axis uniformly:
+  coord_obs_pred()
+
+# RMSE
+rmse(ames_test_res, truth = Sale_Price, estimate = .pred)
+
+# Binary classification performance metrics - hard class predictions
+data(two_class_example)
+tibble(two_class_example)
+
+## A confusion matrix: 
+conf_mat(two_class_example, truth = truth, estimate = predicted)
+
+## Accuracy:
+accuracy(two_class_example, truth, predicted)
+
+## Matthews correlation coefficient:
+mcc(two_class_example, truth, predicted)
+
+## F1 metric:
+f_meas(two_class_example, truth, predicted)
+
+## Combining these three classification metrics together
+classification_metrics <- metric_set(accuracy, mcc, f_meas)
+classification_metrics(two_class_example, truth = truth, estimate = predicted)
+
+# Binary classification performance metrics - predicted probabilities
+
+two_class_curve <- roc_curve(two_class_example, truth, Class1)
+two_class_curve
+
+roc_auc(two_class_example, truth, Class1)
+
+autoplot(two_class_curve)
+
+# Multiclass performance metrics - hard class predictions
+data(hpc_cv)
+tibble(hpc_cv)
+
+accuracy(hpc_cv, obs, pred)
+mcc(hpc_cv, obs, pred)
+
+sensitivity(hpc_cv, obs, pred, estimator = "macro")
+sensitivity(hpc_cv, obs, pred, estimator = "macro_weighted")
+sensitivity(hpc_cv, obs, pred, estimator = "micro")
+
+# Multiclass performance metrics - predicted probabilities
+roc_auc(hpc_cv, obs, VF, F, M, L)
+
+roc_auc(hpc_cv, obs, VF, F, M, L, estimator = "macro_weighted")
+
+hpc_cv %>% 
+  group_by(Resample) %>% 
+  accuracy(obs, pred)
+
+# Four 1-vs-all ROC curves for each fold
+hpc_cv %>% 
+  group_by(Resample) %>% 
+  roc_curve(obs, VF, F, M, L) %>% 
+  autoplot()
+
