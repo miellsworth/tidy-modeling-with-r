@@ -514,3 +514,4 @@ keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
 
 set.seed(1003)
 rf_res <- rf_wflow %>% fit_resamples(resamples = ames_folds, control = keep_pred)
+
