@@ -354,6 +354,73 @@ hpc_cv %>%
   roc_curve(obs, VF, F, M, L) %>% 
   autoplot()
 
+# Fitting a random forest
+rf_model <-
+  rand_forest(trees = 1000) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+rf_wflow <-
+  workflow() %>%
+  add_formula(
+    Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type +
+      Latitude + Longitude) %>%
+  add_model(rf_model)
+
+rf_fit <- rf_wflow %>% fit(data = ames_train)
+
+# Comparing the linear model to the random forest model
+estimate_perf <- function(model, dat) {
+  # Capture the names of the `model` and `dat` objects
+  cl <- match.call()
+  obj_name <- as.character(cl$model)
+  data_name <- as.character(cl$dat)
+  data_name <- gsub("ames_", "", data_name)
+
+  # Estimate these metrics:
+  reg_metrics <- metric_set(rmse, rsq)
+
+  model %>%
+    predict(dat) %>%
+    bind_cols(dat %>% select(Sale_Price)) %>%
+    reg_metrics(Sale_Price, .pred) %>%
+    select(-.estimator) %>%
+    mutate(object = obj_name, data = data_name)
+}
+
+estimate_perf(rf_fit, ames_train)
+
+estimate_perf(lm_fit, ames_train)
+
+# Cross validation
+set.seed(1001)
+ames_folds <- vfold_cv(ames_train, v = 10)
+ames_folds
+
+# For the first fold:
+ames_folds$splits[[1]] %>% analysis() %>% dim()
+
+# Creating a validation set
+set.seed(1002)
+val_set <- validation_split(ames_train, prop = 3/4)
+val_set
+
+# Create a bootstrap sample
+bootstraps(ames_train, times = 5)
+
+# Rolling forecasting origin resampling
+time_slices <-
+  tibble(x = 1:365) %>%
+  rolling_origin(initial = 6 * 30, assess = 30, skip = 29, cumulative = FALSE)
+
+data_range <- function(x) {
+  summarize(x, first = min(x), last = max(x))
+}
+
+map_dfr(time_slices$splits, ~   analysis(.x) %>% data_range())
+
+map_dfr(time_slices$splits, ~ assessment(.x) %>% data_range())
+
 # Fitting using resamples
 keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
 
