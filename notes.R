@@ -635,3 +635,28 @@ library(ggrepel)
 autoplot(four_models, metric = "rsq") +
   geom_text_repel(aes(label = wflow_id), nudge_x = 1/8, nudge_y = 1/100) +
   theme(legend.position = "none")
+
+# Resample-to-resample component of variation (within-resample correlation)
+rsq_indiv_estimates <- 
+  collect_metrics(four_models, summarize = FALSE) %>% 
+  filter(.metric == "rsq") 
+
+rsq_wider <- 
+  rsq_indiv_estimates %>% 
+  select(wflow_id, .estimate, id) %>% 
+  pivot_wider(id_cols = "id", names_from = "wflow_id", values_from = ".estimate")
+
+corrr::correlate(rsq_wider %>% select(-id), quiet = TRUE)
+
+# Visualizing the high correlation of individual resampling statistics
+rsq_indiv_estimates %>% 
+  mutate(wflow_id = reorder(wflow_id, .estimate)) %>% 
+  ggplot(aes(x = wflow_id, y = .estimate, group = id, color = id)) + 
+  geom_line(alpha = .5, lwd = 1.25) + 
+  theme(legend.position = "none")
+
+# Statistical test to show confidence in within-resample correlation
+rsq_wider %>% 
+  with( cor.test(basic_lm, splines_lm) ) %>% 
+  tidy() %>% 
+  select(estimate, starts_with("conf"))
