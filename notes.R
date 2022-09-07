@@ -675,3 +675,66 @@ rsq_wider %>%
   with( t.test(splines_lm, basic_lm, paired = TRUE) ) %>%
   tidy() %>% 
   select(estimate, p.value, starts_with("conf"))
+
+# Determine Bayesian model and fit with resampling statistics (R2)
+library(tidyposterior)
+library(rstanarm)
+
+# The rstanarm package creates copious amounts of output; those results
+# are not shown here but are worth inspecting for potential issues. The
+# option `refresh = 0` can be used to eliminate the logging. 
+rsq_anova <-
+  perf_mod(
+    four_models,
+    metric = "rsq",
+    prior_intercept = rstanarm::student_t(df = 1),
+    chains = 4,
+    iter = 5000,
+    seed = 1102
+  )
+
+# View the posterior distributions
+model_post <- 
+  rsq_anova %>% 
+  # Take a random sample from the posterior distribution
+  # so set the seed again to be reproducible. 
+  tidy(seed = 1103) 
+
+glimpse(model_post)
+
+# Visualize the posterior distributions
+model_post %>% 
+  mutate(model = forcats::fct_inorder(model)) %>%
+  ggplot(aes(x = posterior)) + 
+  geom_histogram(bins = 50, color = "white", fill = "blue", alpha = 0.4) + 
+  facet_wrap(~ model, ncol = 1)
+
+autoplot(rsq_anova) +
+  geom_text_repel(aes(label = workflow), nudge_x = 1/8, nudge_y = 1/100) +
+  theme(legend.position = "none")
+
+# Comparing two linear models and visualize results
+rqs_diff <-
+  contrast_models(rsq_anova,
+                  list_1 = "splines_lm",
+                  list_2 = "basic_lm",
+                  seed = 1104)
+
+rqs_diff %>% 
+  as_tibble() %>% 
+  ggplot(aes(x = difference)) + 
+  geom_vline(xintercept = 0, lty = 2) + 
+  geom_histogram(bins = 50, color = "white", fill = "red", alpha = 0.4)
+
+# Compute the mean of the distribution and confidence intervals
+summary(rqs_diff) %>% 
+  select(-starts_with("pract"))
+
+# Compute the Region of Practical Equivalance (ROPE) using 2%
+summary(rqs_diff, size = 0.02) %>% 
+  select(contrast, starts_with("pract"))
+
+# Compare RF with a linear model using ROPE and a 2% practical effect size
+autoplot(rsq_anova, type = "ROPE", size = 0.02) +
+  geom_text_repel(aes(label = workflow)) +
+  theme(legend.position = "none")
