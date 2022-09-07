@@ -660,3 +660,18 @@ rsq_wider %>%
   with( cor.test(basic_lm, splines_lm) ) %>% 
   tidy() %>% 
   select(estimate, starts_with("conf"))
+
+# Comparing linear models with the ANOVA model
+compare_lm <- 
+  rsq_wider %>% 
+  mutate(difference = splines_lm - basic_lm)
+
+lm(difference ~ 1, data = compare_lm) %>% 
+  tidy(conf.int = TRUE) %>% 
+  select(estimate, p.value, starts_with("conf"))
+
+# Alternatively, a paired t-test could also be used: 
+rsq_wider %>% 
+  with( t.test(splines_lm, basic_lm, paired = TRUE) ) %>%
+  tidy() %>% 
+  select(estimate, p.value, starts_with("conf"))
