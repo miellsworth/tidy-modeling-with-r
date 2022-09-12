@@ -738,3 +738,61 @@ summary(rqs_diff, size = 0.02) %>%
 autoplot(rsq_anova, type = "ROPE", size = 0.02) +
   geom_text_repel(aes(label = workflow)) +
   theme(legend.position = "none")
+
+# Calculate likelihood statistics of different models
+library(tidymodels)
+tidymodels_prefer()
+
+llhood <- function(...) {
+  logistic_reg() %>% 
+    set_engine("glm", ...) %>% 
+    fit(Class ~ ., data = training_set) %>% 
+    glance() %>% 
+    select(logLik)
+}
+
+bind_rows(
+  llhood(),
+  llhood(family = binomial(link = "probit")),
+  llhood(family = binomial(link = "cloglog"))
+) %>% 
+  mutate(link = c("logit", "probit", "c-log-log"))  %>% 
+  arrange(desc(logLik))
+
+# Resample statistics and separate data (modeling vs performance estimation data)
+set.seed(1201)
+rs <- vfold_cv(training_set, repeats = 10)
+
+# Return the individual resampled performance estimates:
+lloss <- function(...) {
+  perf_meas <- metric_set(roc_auc, mn_log_loss)  # mn_log_loss() used to estimate negative log likelihood
+    
+  logistic_reg() %>% 
+    set_engine("glm", ...) %>% 
+    fit_resamples(Class ~ A + B, rs, metrics = perf_meas) %>% 
+    collect_metrics(summarize = FALSE) %>%
+    select(id, id2, .metric, .estimate)
+}
+
+resampled_res <- 
+  bind_rows(
+    lloss()                                    %>% mutate(model = "logistic"),
+    lloss(family = binomial(link = "probit"))  %>% mutate(model = "probit"),
+    lloss(family = binomial(link = "cloglog")) %>% mutate(model = "c-log-log")     
+  ) %>%
+  # Convert log-loss to log-likelihood:
+  mutate(.estimate = ifelse(.metric == "mn_log_loss", -.estimate, .estimate)) %>% 
+  group_by(model, .metric) %>% 
+  summarize(
+    mean = mean(.estimate, na.rm = TRUE),
+    std_err = sd(.estimate, na.rm = TRUE) / sum(!is.na(.estimate)), 
+    .groups = "drop"
+  )
+
+resampled_res %>% 
+  filter(.metric == "mn_log_loss") %>% 
+  ggplot(aes(x = mean, y = model)) + 
+  geom_point() + 
+  geom_errorbar(aes(xmin = mean - 1.64 * std_err, xmax = mean + 1.64 * std_err),
+                width = .1) + 
+  labs(y = NULL, x = "log-likelihood")
