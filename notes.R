@@ -796,3 +796,91 @@ resampled_res %>%
   geom_errorbar(aes(xmin = mean - 1.64 * std_err, xmax = mean + 1.64 * std_err),
                 width = .1) + 
   labs(y = NULL, x = "log-likelihood")
+
+# Specifying different types of arguments in parsnip models
+rand_forest(trees = 2000, min_n = 10) %>%                   # <- main arguments
+  set_engine("ranger", regularization.factor = 0.5)         # <- engine-specific
+
+# Sepcifying tuning parameters
+neural_net_spec <- 
+  mlp(hidden_units = tune()) %>%  # uses tune() to tell tidymodels this parameter is to be tuned
+  set_engine("keras")
+
+# Specifying tuning parameters with a name to identify similar parameters
+ames_rec <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train)  %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = tune()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Longitude, deg_free = tune("longitude df")) %>%
+  step_ns(Latitude,  deg_free = tune("latitude df"))
+
+# Tuning parameters with functions of the same name in the dials package
+hidden_units()
+threshold()
+
+# Tuning parameters with functions of different name in the dials package
+spline_degree()
+
+# identify the parameter using the id value:
+wflow_param %>% extract_parameter_dials("threshold")
+
+recipes_param <- extract_parameter_set_dials(ames_rec)
+recipes_param
+
+# Combining recipe and model specification to show parameters for tuning
+wflow_param <- 
+  workflow() %>% 
+  add_recipe(ames_rec) %>% 
+  add_model(neural_net_spec) %>%
+  extract_parameter_set_dials()
+wflow_param
+
+# Update range of parameters
+extract_parameter_set_dials(ames_rec) %>% 
+  update(threshold = threshold(c(0.8, 1.0)))
+
+# Illustrating and example where the bounds of a parameter set is missing [?]
+rf_spec <- 
+  rand_forest(mtry = tune()) %>% 
+  set_engine("ranger", regularization.factor = tune("regularization"))
+
+rf_param <- extract_parameter_set_dials(rf_spec)
+rf_param
+
+# Updating the parameter set to properly set the bounds
+rf_param %>% 
+  update(mtry = mtry(c(1, 70)))
+
+# Updating the paremeter set after a recipe using finalize()
+pca_rec <- 
+  recipe(Sale_Price ~ ., data = ames_train) %>% 
+  # Select the square-footage predictors and extract their PCA components:
+  step_normalize(contains("SF")) %>% 
+  # Select the number of components needed to capture 95% of
+  # the variance in the predictors. 
+  step_pca(contains("SF"), threshold = .95)
+  
+updated_param <- 
+  workflow() %>% 
+  add_model(rf_spec) %>% 
+  add_recipe(pca_rec) %>% 
+  extract_parameter_set_dials() %>% 
+  finalize(ames_train)
+updated_param
+
+updated_param %>% extract_parameter_dials("mtry")
+
+# Looking at the transformation of a penalty parameter
+penalty()
+
+# correct method to have penalty values between 0.1 and 1.0
+penalty(c(-1, 0)) %>% value_sample(1000) %>% summary()
+
+# incorrect:
+penalty(c(0.1, 1.0)) %>% value_sample(1000) %>% summary()
+
+# Changing the scale of the penalty values
+penalty(trans = NULL, range = 10^c(-10, 0))
