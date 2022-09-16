@@ -884,3 +884,63 @@ penalty(c(0.1, 1.0)) %>% value_sample(1000) %>% summary()
 
 # Changing the scale of the penalty values
 penalty(trans = NULL, range = 10^c(-10, 0))
+
+# Specify a classification model for tuning
+library(tidymodels)
+tidymodels_prefer()
+
+mlp_spec <- 
+  mlp(hidden_units = tune(), penalty = tune(), epochs = tune()) %>% 
+  set_engine("nnet", trace = 0) %>% 
+  set_mode("classification")
+
+# Use the extract_parameter_dials function to extract the arguments that are being tuned
+# and set their "dials" object, print default ranges
+mlp_param <- extract_parameter_set_dials(mlp_spec)
+
+mlp_param %>% extract_parameter_dials("hidden_units")
+
+mlp_param %>% extract_parameter_dials("penalty")
+
+mlp_param %>% extract_parameter_dials("epochs")
+
+# Example of a regular grid
+crossing(
+  hidden_units = 1:3,
+  penalty = c(0.0, 0.1),
+  epochs = c(100, 200)
+)
+
+# Example of creating a regular grid with the grid_regular function
+grid_regular(mlp_param, levels = 2)
+
+mlp_param %>% 
+  grid_regular(levels = c(hidden_units = 3, penalty = 2, epochs = 2))
+
+# Example of creating an irregular grid with the grid_random function
+set.seed(1301)
+mlp_param %>% 
+  grid_random(size = 1000) %>% # 'size' is the number of combinations
+  summary()
+
+# Illustration of overlapping parameter combinations when using grid_random
+library(ggforce)
+set.seed(1302)
+mlp_param %>% 
+  # The 'original = FALSE' option keeps penalty in log10 units
+  grid_random(size = 20, original = FALSE) %>% 
+  ggplot(aes(x = .panel_x, y = .panel_y)) + 
+  geom_point() +
+  geom_blank() +
+  facet_matrix(vars(hidden_units, penalty, epochs), layer.diag = 2) + 
+  labs(title = "Random design with 20 candidates")
+
+# Illustration of space filling designs to create parameter combinations
+set.seed(1303)
+mlp_param %>% 
+  grid_latin_hypercube(size = 20, original = FALSE) %>% 
+  ggplot(aes(x = .panel_x, y = .panel_y)) + 
+  geom_point() +
+  geom_blank() +
+  facet_matrix(vars(hidden_units, penalty, epochs), layer.diag = 2) + 
+  labs(title = "Latin Hypercube design with 20 candidates")
