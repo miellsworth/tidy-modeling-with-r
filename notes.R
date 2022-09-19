@@ -944,3 +944,74 @@ mlp_param %>%
   geom_blank() +
   facet_matrix(vars(hidden_units, penalty, epochs), layer.diag = 2) + 
   labs(title = "Latin Hypercube design with 20 candidates")
+
+# Set-up classification data set for model tuning
+library(tidymodels)
+data(cells)
+cells <- cells %>% select(-case)
+
+# Compute performance metrics using 10-fold cross validation
+set.seed(1304)
+cell_folds <- vfold_cv(cells)
+
+# Create a recipe to normalize predictors and create principle components
+mlp_rec <-
+  recipe(class ~ ., data = cells) %>%
+  step_YeoJohnson(all_numeric_predictors()) %>%  # Encourages symmetric distributions
+  step_normalize(all_numeric_predictors()) %>%  # Ensure predictors are on the same scale
+  step_pca(all_numeric_predictors(), num_comp = tune()) %>% 
+  step_normalize(all_numeric_predictors())
+
+# Add recipe to workflow with neural network model specification
+mlp_wflow <- 
+  workflow() %>% 
+  add_model(mlp_spec) %>% 
+  add_recipe(mlp_rec)
+
+# Modify default ranges of tuning parameters
+mlp_param <- 
+  mlp_wflow %>% 
+  extract_parameter_set_dials() %>% 
+  update(
+    epochs = epochs(c(50, 200)),  # Tuning the neural network
+    num_comp = num_comp(c(0, 40))  # Tuning the PCA transformation of predictors
+  )
+
+# Evaluate a regular grid
+roc_res <- metric_set(roc_auc)
+set.seed(1305)
+mlp_reg_tune <-
+  mlp_wflow %>%
+  tune_grid(
+    cell_folds,
+    grid = mlp_param %>% grid_regular(levels = 3),
+    metrics = roc_res
+  )
+mlp_reg_tune
+
+# Extract the results using autoplot
+autoplot(mlp_reg_tune) + 
+  scale_color_viridis_d(direction = -1) + 
+  theme(legend.position = "top")
+
+# Extract the best results using show_best
+show_best(mlp_reg_tune) %>% select(-.estimator)
+
+# Use a space filling design by setting the grid argument to an int
+set.seed(1306)
+mlp_sfd_tune <-
+  mlp_wflow %>%
+  tune_grid(
+    cell_folds,
+    grid = 20,  # Tells tune_grid() to use a space filling design
+    # Pass in the parameter object to use the appropriate range: 
+    param_info = mlp_param,
+    metrics = roc_res
+  )
+mlp_sfd_tune
+
+autoplot(mlp_sfd_tune)
+
+# Extract the best results using show_best
+show_best(mlp_sfd_tune) %>% select(-.estimator)
+
