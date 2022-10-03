@@ -117,6 +117,11 @@ lm_wflow <-
 lm_wflow
 
 # Special formulas ----
+library(lme4)
+library(nlme)
+
+lmer(distance ~ Sex + (age | Subject), data = nlme::Orthodont)
+
 library(multilevelmod)
 
 multilevel_spec <- linear_reg() %>% set_engine("lmer")
@@ -129,7 +134,7 @@ multilevel_workflow <-
             # This formula is given to the model
             formula = distance ~ Sex + (age | Subject))
 
-multilevel_fit <- fit(multilevel_workflow, data = Orthodont)
+multilevel_fit <- fit(multilevel_workflow, data = nlme::Orthodont)
 multilevel_fit
 
 # Workflow sets ----
@@ -250,8 +255,33 @@ ames_rec <-
 
 tidy(ames_rec)
 
+ames_rec <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_other(Neighborhood, threshold = 0.01, id = "my_id") %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+lm_wflow <- 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_rec)
+
+lm_fit <- fit(lm_wflow, ames_train)
+
+estimated_recipe <- 
+  lm_fit %>% 
+  extract_recipe(estimated = TRUE)
+
+tidy(estimated_recipe, id = "my_id")
+
+tidy(estimated_recipe, number = 2)
+
+
 # Creating roles
-ames_rec %>% update_role(address, new_role = "street address")
+# ames_rec %>% update_role(address, new_role = "street address")
 
 # End of chapter 8 code ----
 library(tidymodels)
@@ -355,6 +385,7 @@ hpc_cv %>%
   autoplot()
 
 # Fitting a random forest
+library(ranger)
 rf_model <-
   rand_forest(trees = 1000) %>%
   set_engine("ranger") %>%
@@ -1015,3 +1046,35 @@ autoplot(mlp_sfd_tune)
 # Extract the best results using show_best
 show_best(mlp_sfd_tune) %>% select(-.estimator)
 
+# Extract the best results from the regular grid results
+select_best(mlp_reg_tune, metric = "roc_auc")
+
+# Create a final workflow from a manual set of parameters
+
+# Parameters created manually from results from the autoplot
+logistic_param <- 
+  tibble(
+    num_comp = 0,
+    epochs = 125,
+    hidden_units = 1,
+    penalty = 1
+  )
+
+final_mlp_wflow <- 
+  mlp_wflow %>% 
+  finalize_workflow(logistic_param)
+final_mlp_wflow
+
+# Fit the final workflow
+final_mlp_fit <- 
+  final_mlp_wflow %>% 
+  fit(cells)
+
+# Create R code for tuning a model using usemodels
+library(usemodels)
+
+use_xgboost(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+              Latitude + Longitude, 
+            data = ames_train,
+            # Add comments explaining some of the code:
+            verbose = TRUE)
