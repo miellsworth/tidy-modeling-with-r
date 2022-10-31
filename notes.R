@@ -1078,3 +1078,34 @@ use_xgboost(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type +
             data = ames_train,
             # Add comments explaining some of the code:
             verbose = TRUE)
+
+# The resulting code
+xgboost_recipe <- 
+  recipe(formula = Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+    Latitude + Longitude, data = ames_train) %>% 
+  step_novel(all_nominal_predictors()) %>% 
+  ## This model requires the predictors to be numeric. The most common 
+  ## method to convert qualitative predictors to numeric is to create 
+  ## binary indicator variables (aka dummy variables) from these 
+  ## predictors. However, for this model, binary indicator variables can be 
+  ## made for each of the levels of the factors (known as 'one-hot 
+  ## encoding'). 
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>% 
+  step_zv(all_predictors()) 
+
+xgboost_spec <- 
+  boost_tree(trees = tune(), min_n = tune(), tree_depth = tune(), learn_rate = tune(), 
+    loss_reduction = tune(), sample_size = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost") 
+
+xgboost_workflow <- 
+  workflow() %>% 
+  add_recipe(xgboost_recipe) %>% 
+  add_model(xgboost_spec) 
+
+set.seed(69305)
+xgboost_tune <-
+  tune_grid(xgboost_workflow, 
+            resamples = stop("add your rsample object"), 
+            grid = stop("add number of candidate points"))
