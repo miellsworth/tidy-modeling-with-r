@@ -1109,3 +1109,74 @@ xgboost_tune <-
   tune_grid(xgboost_workflow, 
             resamples = stop("add your rsample object"), 
             grid = stop("add number of candidate points"))
+
+# Submodel optimization
+c5_spec <- 
+  boost_tree(trees = tune()) %>% 
+  set_engine("C5.0") %>% 
+  set_mode("classification")
+
+set.seed(1307)
+c5_spec %>%
+  tune_grid(
+    class ~ .,
+    resamples = cell_folds,
+    grid = data.frame(trees = 1:100),
+    metrics = roc_res
+  )
+
+# Accessing global variables when using parallel processing
+coef_penalty <- 0.1
+spec <- linear_reg(penalty = coef_penalty) %>% set_engine("glmnet")
+spec
+
+# The penalty will show up as a "quosure" and show that it exists in the global env
+spec$args$penalty
+
+# Use !! to insert the actual data into the objects
+spec <- linear_reg(penalty = !!coef_penalty) %>% set_engine("glmnet")
+spec$args$penalty
+
+# Use !!! for multiple variables
+mcmc_args <- list(chains = 3, iter = 1000, cores = 3)
+
+linear_reg() %>% set_engine("stan", !!!mcmc_args)
+
+library(stringr)
+ch_2_vars <- str_subset(names(cells), "ch_2")
+ch_2_vars
+
+# Still uses a reference to global data (~_~;)
+recipe(class ~ ., data = cells) %>% 
+  step_spatialsign(all_of(ch_2_vars))
+
+# Inserts the values into the step ヽ(•‿•)ノ
+recipe(class ~ ., data = cells) %>% 
+  step_spatialsign(!!!ch_2_vars)
+
+# Racing methods
+library(finetune)
+
+set.seed(1308)
+mlp_sfd_race <-
+  mlp_wflow %>%
+  tune_race_anova(
+    cell_folds,
+    grid = 20,
+    param_info = mlp_param,
+    metrics = roc_res,
+    control = control_race(verbose_elim = TRUE)
+  )
+
+show_best(mlp_sfd_race, n = 10)
+
+# End of chapter 13 code ----
+library(tidymodels)
+
+data(cells)
+cells <- cells %>% select(-case)
+
+set.seed(1304)
+cell_folds <- vfold_cv(cells)
+
+roc_res <- metric_set(roc_auc)
