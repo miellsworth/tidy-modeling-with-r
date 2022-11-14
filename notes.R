@@ -1247,3 +1247,23 @@ svm_bo <-
 show_best(svm_bo)
 
 autoplot(svm_bo, type = "performance")
+
+ctrl_sa <- control_sim_anneal(verbose = TRUE, no_improve = 10L)
+
+# Simulated annealing
+set.seed(1404)
+svm_sa <-
+  svm_wflow %>%
+  tune_sim_anneal(
+    resamples = cell_folds,
+    metrics = roc_res,
+    initial = svm_initial,
+    param_info = svm_param,
+    iter = 50,
+    control = ctrl_sa
+  )
+
+# Show results
+autoplot(svm_sa, type = "performance")
+
+autoplot(svm_sa, type = "parameters")
