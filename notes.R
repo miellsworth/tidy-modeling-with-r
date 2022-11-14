@@ -1227,3 +1227,23 @@ svm_initial <-
   tune_grid(resamples = cell_folds, grid = start_grid, metrics = roc_res)
 
 collect_metrics(svm_initial)
+
+# Initial substrate of the Gaussian Process model
+ctrl <- control_bayes(verbose = TRUE)
+
+set.seed(1403)
+svm_bo <-
+  svm_wflow %>%
+  tune_bayes(
+    resamples = cell_folds,
+    metrics = roc_res,
+    initial = svm_initial,
+    param_info = svm_param,
+    iter = 25,
+    control = ctrl
+  )
+
+# Show results
+show_best(svm_bo)
+
+autoplot(svm_bo, type = "performance")
