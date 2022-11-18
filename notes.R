@@ -1370,3 +1370,53 @@ nnet_param <-
    nnet_spec %>% 
    extract_parameter_set_dials() %>% 
    update(hidden_units = hidden_units(c(1, 27)))
+
+# Workflow set example
+## Combine the recipe that only standardizes the predictors to the nonlinear models 
+## that require the predictors to be in the same units
+
+normalized <- 
+   workflow_set(
+      preproc = list(normalized = normalized_rec), 
+      models = list(SVM_radial = svm_r_spec, SVM_poly = svm_p_spec, 
+                    KNN = knn_spec, neural_network = nnet_spec)
+   )
+normalized
+
+# Extract the workflow
+normalized %>% extract_workflow(id = "normalized_KNN")
+
+# Add the neural network parameter object via the option column
+normalized <- 
+   normalized %>% 
+   option_add(param_info = nnet_param, id = "normalized_neural_network")
+normalized
+
+# NOTE: The result column is a placeholder for the output of the tuning or resampling functions
+
+# Create workflow set for the other models using dplyr selectors for outcome and predictors
+model_vars <- 
+   workflow_variables(outcomes = compressive_strength, 
+                      predictors = everything())
+
+no_pre_proc <- 
+   workflow_set(
+      preproc = list(simple = model_vars), 
+      models = list(MARS = mars_spec, CART = cart_spec, CART_bagged = bag_cart_spec,
+                    RF = rf_spec, boosting = xgb_spec, Cubist = cubist_spec)
+   )
+no_pre_proc
+
+# Create workflow set for models that use nonlinear terms and interactions
+with_features <- 
+   workflow_set(
+      preproc = list(full_quad = poly_recipe), 
+      models = list(linear_reg = linear_reg_spec, KNN = knn_spec)
+   )
+
+# Combine all workflow sets
+all_workflows <- 
+   bind_rows(no_pre_proc, normalized, with_features) %>% 
+   # Make the workflow ID's a little more simple: 
+   mutate(wflow_id = gsub("(simple_)|(normalized_)", "", wflow_id))
+all_workflows
