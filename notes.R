@@ -1517,3 +1517,28 @@ matched_results %>%
    geom_text_repel(aes(label = model)) +
    coord_obs_pred() + 
    labs(x = "Complete Grid RMSE", y = "Racing RMSE") 
+
+# Pick a workflow to finalize
+best_results <- 
+   race_results %>% 
+   extract_workflow_set_result("boosting") %>%  # Boosted tree model worked well
+   select_best(metric = "rmse")
+best_results
+
+boosting_test_results <- 
+   race_results %>% 
+   extract_workflow("boosting") %>% 
+   finalize_workflow(best_results) %>% 
+   last_fit(split = concrete_split)
+
+# See test metric results
+collect_metrics(boosting_test_results)
+
+# Visualize predictions on test set
+boosting_test_results %>% 
+   collect_predictions() %>% 
+   ggplot(aes(x = compressive_strength, y = .pred)) + 
+   geom_abline(color = "gray50", lty = 2) + 
+   geom_point(alpha = 0.5) + 
+   coord_obs_pred() + 
+   labs(x = "observed", y = "predicted")
