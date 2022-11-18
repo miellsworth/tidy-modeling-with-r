@@ -1461,3 +1461,59 @@ autoplot(
 autoplot(grid_results, id = "Cubist", metric = "rmse")
 
 # NOTE: collect_predictions() and collect_metrics() can be used
+
+# Screen model with the racing approach using workflow_map() to speed up evaluation
+library(finetune)
+
+race_ctrl <-
+   control_race(
+      save_pred = TRUE,
+      parallel_over = "everything",
+      save_workflow = TRUE
+   )
+
+race_results <-
+   all_workflows %>%
+   workflow_map(
+      "tune_race_anova",  # Function to apply to the workflows
+      seed = 1503,
+      resamples = concrete_folds,
+      grid = 25,
+      control = race_ctrl
+   )
+
+# Note the resuts contain "race[+]"
+race_results
+
+# Visualize results of the models
+autoplot(
+   race_results,
+   rank_metric = "rmse",  
+   metric = "rmse",       
+   select_best = TRUE    
+) +
+   geom_text(aes(y = mean - 1/2, label = wflow_id), angle = 90, hjust = 1) +
+   lims(y = c(3.0, 9.5)) +
+   theme(legend.position = "none")
+
+# Determine if results are similar to full grid
+matched_results <- 
+   rank_results(race_results, select_best = TRUE) %>% 
+   select(wflow_id, .metric, race = mean, config_race = .config) %>% 
+   inner_join(
+      rank_results(grid_results, select_best = TRUE) %>% 
+         select(wflow_id, .metric, complete = mean, 
+                config_complete = .config, model),
+      by = c("wflow_id", ".metric"),
+   ) %>%  
+   filter(.metric == "rmse")
+
+library(ggrepel)
+
+matched_results %>% 
+   ggplot(aes(x = complete, y = race)) + 
+   geom_abline(lty = 3) + 
+   geom_point() + 
+   geom_text_repel(aes(label = model)) +
+   coord_obs_pred() + 
+   labs(x = "Complete Grid RMSE", y = "Racing RMSE") 
