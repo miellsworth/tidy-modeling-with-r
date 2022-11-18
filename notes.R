@@ -1267,3 +1267,106 @@ svm_sa <-
 autoplot(svm_sa, type = "performance")
 
 autoplot(svm_sa, type = "parameters")
+
+# Modeling concrete mixture strength
+
+# Define data splitting and resampling schemes
+library(tidymodels)
+tidymodels_prefer()
+data(concrete, package = "modeldata")
+glimpse(concrete)
+
+# Remove duplicate mixtures by averaging comprehensive strength for those mixtures
+concrete <- 
+   concrete %>% 
+   group_by(across(-compressive_strength)) %>% 
+   summarize(compressive_strength = mean(compressive_strength),
+             .groups = "drop")
+nrow(concrete)
+
+# Split the data
+set.seed(1501)
+concrete_split <- initial_split(concrete, strata = compressive_strength)
+concrete_train <- training(concrete_split)
+concrete_test  <- testing(concrete_split)
+
+# Resample using 10 fold cross validation, 5 repeats
+set.seed(1502)
+concrete_folds <- 
+   vfold_cv(concrete_train, strata = compressive_strength, repeats = 5)
+
+# Create recipes to address necessary preprocessing for some models
+## Normalizing required for neural networks, KNN, and support vector machines
+normalized_rec <- 
+   recipe(compressive_strength ~ ., data = concrete_train) %>% 
+   step_normalize(all_predictors()) 
+
+## Other models may require traditional response surface design model expansion (quadratic and two-way interactions)
+poly_recipe <- 
+   normalized_rec %>% 
+   step_poly(all_predictors()) %>% 
+   step_interact(~ all_predictors():all_predictors())
+
+# Create a set of model specifications using parsnip
+library(rules)
+library(baguette)
+
+linear_reg_spec <- 
+   linear_reg(penalty = tune(), mixture = tune()) %>% 
+   set_engine("glmnet")
+
+nnet_spec <- 
+   mlp(hidden_units = tune(), penalty = tune(), epochs = tune()) %>% 
+   set_engine("nnet", MaxNWts = 2600) %>% 
+   set_mode("regression")
+
+mars_spec <- 
+   mars(prod_degree = tune()) %>%  #<- use GCV to choose terms
+   set_engine("earth") %>% 
+   set_mode("regression")
+
+svm_r_spec <- 
+   svm_rbf(cost = tune(), rbf_sigma = tune()) %>% 
+   set_engine("kernlab") %>% 
+   set_mode("regression")
+
+svm_p_spec <- 
+   svm_poly(cost = tune(), degree = tune()) %>% 
+   set_engine("kernlab") %>% 
+   set_mode("regression")
+
+knn_spec <- 
+   nearest_neighbor(neighbors = tune(), dist_power = tune(), weight_func = tune()) %>% 
+   set_engine("kknn") %>% 
+   set_mode("regression")
+
+cart_spec <- 
+   decision_tree(cost_complexity = tune(), min_n = tune()) %>% 
+   set_engine("rpart") %>% 
+   set_mode("regression")
+
+bag_cart_spec <- 
+   bag_tree() %>% 
+   set_engine("rpart", times = 50L) %>% 
+   set_mode("regression")
+
+rf_spec <- 
+   rand_forest(mtry = tune(), min_n = tune(), trees = 1000) %>% 
+   set_engine("ranger") %>% 
+   set_mode("regression")
+
+xgb_spec <- 
+   boost_tree(tree_depth = tune(), learn_rate = tune(), loss_reduction = tune(), 
+              min_n = tune(), sample_size = tune(), trees = tune()) %>% 
+   set_engine("xgboost") %>% 
+   set_mode("regression")
+
+cubist_spec <- 
+   cubist_rules(committees = tune(), neighbors = tune()) %>% 
+   set_engine("Cubist")
+
+# Ensure neural network has up  to 27 hidden units using extract_parameter_set_dials()
+nnet_param <- 
+   nnet_spec %>% 
+   extract_parameter_set_dials() %>% 
+   update(hidden_units = hidden_units(c(1, 27)))
