@@ -1420,3 +1420,44 @@ all_workflows <-
    # Make the workflow ID's a little more simple: 
    mutate(wflow_id = gsub("(simple_)|(normalized_)", "", wflow_id))
 all_workflows
+
+# Create tuning parameter combinations for all of the models
+grid_ctrl <-
+   control_grid(
+      save_pred = TRUE,
+      parallel_over = "everything",
+      save_workflow = TRUE
+   )
+
+grid_results <-
+   all_workflows %>%
+   workflow_map(
+      seed = 1503,  # used to ensure that each execution of tune_grid() consumes the same random numbers
+      resamples = concrete_folds,
+      grid = 25,
+      control = grid_ctrl
+   )
+
+grid_results
+
+# Examine results using RMSE metric
+grid_results %>% 
+   rank_results() %>% 
+   filter(.metric == "rmse") %>% 
+   select(model, .config, rmse = mean, rank)
+
+# Visualize the best results for each model
+autoplot(
+   grid_results,
+   rank_metric = "rmse",  # <- how to order models
+   metric = "rmse",       # <- which metric to visualize
+   select_best = TRUE     # <- one point per workflow
+) +
+   geom_text(aes(y = mean - 1/2, label = wflow_id), angle = 90, hjust = 1) +
+   lims(y = c(3.5, 9.5)) +
+   theme(legend.position = "none")
+
+# Visualize the tuning parameters for a specific model
+autoplot(grid_results, id = "Cubist", metric = "rmse")
+
+# NOTE: collect_predictions() and collect_metrics() can be used
