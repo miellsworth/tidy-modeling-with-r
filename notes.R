@@ -1542,3 +1542,29 @@ boosting_test_results %>%
    geom_point(alpha = 0.5) + 
    coord_obs_pred() + 
    labs(x = "observed", y = "predicted")
+
+# Dimensionality reduction on the beans dataset
+library(tidymodels)
+tidymodels_prefer()
+library(beans)
+
+# Create training, testing and validation datasets
+set.seed(1601)
+bean_split <- initial_split(beans, strata = class, prop = 3/4)
+
+bean_train <- training(bean_split)
+bean_test  <- testing(bean_split)
+
+set.seed(1602)
+bean_val <- validation_split(bean_train, strata = class, prop = 4/5)
+bean_val$splits[[1]]
+
+# Correlation structure of the data
+
+library(corrplot)
+tmwr_cols <- colorRampPalette(c("#91CBD765", "#CA225E"))
+bean_train %>% 
+  select(-class) %>% 
+  cor() %>% 
+  corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
+
