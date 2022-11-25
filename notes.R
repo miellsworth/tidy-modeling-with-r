@@ -1608,3 +1608,79 @@ p2 <-
   ggtitle("Processed validation set data")
 
 p1 + p2
+
+# Create a function to plot the resulting data following a transformation
+
+library(ggforce)
+plot_validation_results <- function(recipe, dat = assessment(bean_val$splits[[1]])) {
+  recipe %>%
+    # Estimate any additional steps
+    prep() %>%
+    # Process the data (the validation set by default)
+    bake(new_data = dat) %>%
+    # Create the scatterplot matrix
+    ggplot(aes(x = .panel_x, y = .panel_y, color = class, fill = class)) +
+    geom_point(alpha = 0.4, size = 0.5) +
+    geom_autodensity(alpha = .3) +
+    facet_matrix(vars(-class), layer.diag = 2) + 
+    scale_color_brewer(palette = "Dark2") + 
+    scale_fill_brewer(palette = "Dark2")
+}
+
+# Add PCA to bean recipe and plot results
+bean_rec_trained %>%
+  step_pca(all_numeric_predictors(), num_comp = 4) %>%
+  plot_validation_results() + 
+  ggtitle("Principal Component Analysis")
+
+# Visualize the top features for each component
+library(learntidymodels)  # functions that help visualize top features
+bean_rec_trained %>%
+  step_pca(all_numeric_predictors(), num_comp = 4) %>% 
+  prep() %>% 
+  plot_top_loadings(component_number <= 4, n = 5) + 
+  scale_fill_brewer(palette = "Paired") +
+  ggtitle("Principal Component Analysis")
+
+# Add partial least squares to bean recipe and plot results
+bean_rec_trained %>%
+  step_pls(all_numeric_predictors(), outcome = "class", num_comp = 4) %>%
+  plot_validation_results() + 
+  ggtitle("Partial Least Squares")
+
+# Visualize the top features for each component
+bean_rec_trained %>%
+  step_pls(all_numeric_predictors(), outcome = "class", num_comp = 4) %>%
+  prep() %>% 
+  plot_top_loadings(component_number <= 4, n = 5, type = "pls") + 
+  scale_fill_brewer(palette = "Paired") +
+  ggtitle("Partial Least Squares")
+
+# Add independent component analyis to bean recipe and plot results
+bean_rec_trained %>%
+  step_ica(all_numeric_predictors(), num_comp = 4) %>%
+  plot_validation_results() + 
+  ggtitle("Independent Component Analysis")
+
+# NOTE: result shows poor separation between classes in the first few components
+
+# Add uniform manifold approximation and projection to bean recipe and plot results
+library(embed)
+
+# Unsupervised
+bean_rec_trained %>%
+  step_umap(all_numeric_predictors(), num_comp = 4) %>%
+  plot_validation_results() +
+  ggtitle("UMAP")
+
+# NOTE: While the between-cluster space is pronounced, clusters
+# can contain a heterogeneous mixture of classes.
+
+# Supervised
+bean_rec_trained %>%
+  step_umap(all_numeric_predictors(), outcome = "class", num_comp = 4) %>%
+  plot_validation_results() +
+  ggtitle("UMAP (supervised)")
+
+# NOTE: UMAP can be very sensitive to tuning parameters it would help to 
+# experiment with a few of the parameters to assess how robust the results are
