@@ -1568,3 +1568,11 @@ bean_train %>%
   cor() %>% 
   corrplot(col = tmwr_cols(200), tl.col = "black", method = "ellipse")
 
+# Preprocessing recipe prior to dimensionality reduction
+library(bestNormalize)
+bean_rec <-
+  # Use the training data from the bean_val split object
+  recipe(class ~ ., data = analysis(bean_val$splits[[1]])) %>%
+  step_zv(all_numeric_predictors()) %>%
+  step_orderNorm(all_numeric_predictors()) %>% 
+  step_normalize(all_numeric_predictors())
