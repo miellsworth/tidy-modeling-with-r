@@ -1684,3 +1684,99 @@ bean_rec_trained %>%
 
 # NOTE: UMAP can be very sensitive to tuning parameters it would help to 
 # experiment with a few of the parameters to assess how robust the results are
+
+# Create a series of model specifications and use a workflow set to tune models
+library(baguette)
+library(discrim)
+
+mlp_spec <-
+  mlp(hidden_units = tune(), penalty = tune(), epochs = tune()) %>%
+  set_engine('nnet') %>%
+  set_mode('classification')
+
+bagging_spec <-
+  bag_tree() %>%
+  set_engine('rpart') %>%
+  set_mode('classification')
+
+fda_spec <-
+  discrim_flexible(
+    prod_degree = tune()
+  ) %>%
+  set_engine('earth')
+
+rda_spec <-
+  discrim_regularized(frac_common_cov = tune(), frac_identity = tune()) %>%
+  set_engine('klaR')
+
+bayes_spec <-
+  naive_Bayes() %>%
+  set_engine('klaR')
+
+# Create recipes for PLS and UMAP dimensionality reduction with tuning set
+bean_rec <-
+  recipe(class ~ ., data = bean_train) %>%
+  step_zv(all_numeric_predictors()) %>%
+  step_orderNorm(all_numeric_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
+pls_rec <- 
+  bean_rec %>% 
+  step_pls(all_numeric_predictors(), outcome = "class", num_comp = tune())
+
+umap_rec <-
+  bean_rec %>%
+  step_umap(
+    all_numeric_predictors(),
+    outcome = "class",
+    num_comp = tune(),
+    neighbors = tune(),
+    min_dist = tune()
+  )
+
+# Take the preprocessors and models and cross them
+ctrl <- control_grid(parallel_over = "everything")  # allows for parallel processing
+bean_res <- 
+  workflow_set(
+    preproc = list(basic = class ~., pls = pls_rec, umap = umap_rec), 
+    models = list(bayes = bayes_spec, fda = fda_spec,
+                  rda = rda_spec, bag = bagging_spec,
+                  mlp = mlp_spec)
+  ) %>% 
+  # Applies grid search to optimize the model/preprocessing parameters across 10 combos
+  workflow_map(
+    verbose = TRUE,
+    seed = 1603,
+    resamples = bean_val,
+    grid = 10,
+    metrics = metric_set(roc_auc),  # multiclass ROC AUC estimated on the validation set
+    control = ctrl
+  )
+
+# Rank the models by their validation set estimates of ROC AUC
+rankings <- 
+  rank_results(bean_res, select_best = TRUE) %>% 
+  mutate(method = map_chr(wflow_id, ~ str_split(.x, "_", simplify = TRUE)[1])) 
+
+tidymodels_prefer()
+filter(rankings, rank <= 5) %>% dplyr::select(rank, mean, model, method)
+
+# NOTE: all models are generally good
+
+# For demonstration, use RDA model + PLS as the final model
+rda_res <- 
+  bean_res %>% 
+  extract_workflow("pls_rda") %>% 
+  # Finalize workflow with numerically best params
+  finalize_workflow(
+    bean_res %>% 
+      extract_workflow_set_result("pls_rda") %>% 
+      select_best(metric = "roc_auc")
+  ) %>% 
+  # Fit to the training set
+  last_fit(split = bean_split, metrics = metric_set(roc_auc))
+
+rda_wflow_fit <- extract_workflow(rda_res)
+
+# Results for multiclass ROC AUC on the testing set
+collect_metrics(rda_res)
