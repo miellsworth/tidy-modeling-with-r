@@ -1576,3 +1576,35 @@ bean_rec <-
   step_zv(all_numeric_predictors()) %>%
   step_orderNorm(all_numeric_predictors()) %>% 
   step_normalize(all_numeric_predictors())
+
+# Fit the recipe on training data
+# NOTE: not specifying the training argument will default 
+# to the data used in the call to recipe()
+bean_rec_trained <- prep(bean_rec)  # analysis(bean_val$splits[[1]] will be used as training data)
+bean_rec_trained
+
+# NOTE: default argument retain = TRUE will keep the preprocessed training data
+# within the recipe (reducing redundant calculations)
+# Set to FALSE if dataset is too big to keep in memory
+
+# NOTE: using verbose = TRUE or log_changes = TRUE in the prep() function can help debug issues
+
+# Process the validation data
+bean_validation <- bean_val$splits %>% pluck(1) %>% assessment()
+bean_val_processed <- bake(bean_rec_trained, new_data = bean_validation)
+
+# Visualize the processed "area" predictor
+library(patchwork)
+p1 <- 
+  bean_validation %>% 
+  ggplot(aes(x = area)) + 
+  geom_histogram(bins = 30, color = "white", fill = "blue", alpha = 1/3) + 
+  ggtitle("Original validation set data")
+
+p2 <- 
+  bean_val_processed %>% 
+  ggplot(aes(x = area)) + 
+  geom_histogram(bins = 30, color = "white", fill = "red", alpha = 1/3) + 
+  ggtitle("Processed validation set data")
+
+p1 + p2
