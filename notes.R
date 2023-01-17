@@ -1855,3 +1855,34 @@ glm_estimates %>%
   coord_fixed()
   filter(level == "..new")
 ames_mixed
+
+# feature hashing
+library(rlang)
+
+ames_hashed <-
+  ames_train %>%
+  mutate(Hash = map_chr(Neighborhood, hash))
+
+ames_hashed %>%
+  select(Neighborhood, Hash)
+
+# changing the number of possible hashes to 16
+ames_hashed %>%
+  ## first make a smaller hash for integers that R can handle
+  mutate(Hash = strtoi(substr(Hash, 26, 32), base = 16L),  
+         ## now take the modulo
+         Hash = Hash %% 16) %>%
+  select(Neighborhood, Hash)
+
+# Implement feature hashing using a recipe step
+library(textrecipes)
+ames_hash <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_dummy_hash(Neighborhood, signed = FALSE, num_terms = 16L) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+ames_hash
