@@ -1780,3 +1780,78 @@ rda_wflow_fit <- extract_workflow(rda_res)
 
 # Results for multiclass ROC AUC on the testing set
 collect_metrics(rda_res)
+
+# Effect/likelihood encoding
+# Mean home price for neighborhoods in the Ames training set, which can be used as an effect encoding for this categorical variable
+ames_train %>%
+  group_by(Neighborhood) %>%
+  summarize(mean = mean(Sale_Price),
+            std_err = sd(Sale_Price) / sqrt(length(Sale_Price))) %>% 
+  ggplot(aes(y = reorder(Neighborhood, mean), x = mean)) + 
+  geom_point() +
+  geom_errorbar(aes(xmin = mean - 1.64 * std_err, xmax = mean + 1.64 * std_err)) +
+  labs(y = NULL, x = "Price (mean, log scale)")
+
+# Effect encoding using a generalized linear model
+library(embed)
+
+ames_glm <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_lencode_glm(Neighborhood, outcome = vars(Sale_Price)) %>%  # step function for encoding
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+ames_glm
+
+# prep recipe using training data, tidy to see results
+glm_estimates <-
+  prep(ames_glm) %>%
+  tidy(number = 2)
+
+glm_estimates
+
+# estimate a novel factor level
+glm_estimates %>%
+  filter(level == "..new")
+
+# effect encoding with partial pooling (using a mixed or hierarchical generalized linear model)
+ames_mixed <- 
+  recipe(Sale_Price ~ Neighborhood + Gr_Liv_Area + Year_Built + Bldg_Type + 
+           Latitude + Longitude, data = ames_train) %>%
+  step_log(Gr_Liv_Area, base = 10) %>% 
+  step_lencode_mixed(Neighborhood, outcome = vars(Sale_Price)) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact( ~ Gr_Liv_Area:starts_with("Bldg_Type_") ) %>% 
+  step_ns(Latitude, Longitude, deg_free = 20)
+
+mixed_estimates <-
+  prep(ames_mixed) %>%
+  tidy(number = 2)
+
+mixed_estimates
+
+# estimate a novel factor level
+mixed_estimates %>%
+  filter(level == "..new")
+
+# comparing partial pooling vs no pooling
+glm_estimates %>%
+  rename(`no pooling` = value) %>%
+  left_join(
+    mixed_estimates %>%
+      rename(`partial pooling` = value), by = "level"
+  ) %>%
+  left_join(
+    ames_train %>% 
+      count(Neighborhood) %>% 
+      mutate(level = as.character(Neighborhood))
+  ) %>%
+  ggplot(aes(`no pooling`, `partial pooling`, size = sqrt(n))) +
+  geom_abline(color = "gray50", lty = 2) +
+  geom_point(alpha = 0.7) +
+  coord_fixed()
+  filter(level == "..new")
+ames_mixed
