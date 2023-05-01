@@ -1916,3 +1916,70 @@ explainer_rf <-
     label = "random forest",
     verbose = FALSE
   )
+
+# Local model explanations
+# View an observation on a duplex
+duplex <- vip_train[120,]
+duplex
+
+# Use DALEX to understand feature contribution to model prediction for linear model
+lm_breakdown <- predict_parts(explainer = explainer_lm, new_observation = duplex)
+lm_breakdown
+
+# Use DALEX to understand feature contribution to model prediction for random forest model
+rf_breakdown <- predict_parts(explainer = explainer_rf, new_observation = duplex)
+rf_breakdown
+
+# Use SHAP to understand feature contribution to model prediction for random forest model
+set.seed(1801)
+shap_duplex <- 
+  predict_parts(
+    explainer = explainer_rf, 
+    new_observation = duplex, 
+    type = "shap",
+    B = 20  # Use 20 random orderings
+  )
+
+# Plot feature contributions
+library(forcats)
+shap_duplex %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(contribution)) %>%
+  ungroup() %>%
+  mutate(variable = fct_reorder(variable, abs(mean_val))) %>%
+  ggplot(aes(contribution, variable, fill = mean_val > 0)) +
+  geom_col(data = ~distinct(., variable, mean_val), 
+           aes(mean_val, variable), 
+           alpha = 0.5) +
+  geom_boxplot(width = 0.5) +
+  theme(legend.position = "none") +
+  scale_fill_viridis_d() +
+  labs(y = NULL)
+
+# Use a different observation to understand local model explanation
+big_house <- vip_train[1269,]
+big_house
+
+set.seed(1802)
+shap_house <- 
+  predict_parts(
+    explainer = explainer_rf, 
+    new_observation = big_house, 
+    type = "shap",
+    B = 20
+  )
+
+# Plot feature contributions
+shap_house %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(contribution)) %>%
+  ungroup() %>%
+  mutate(variable = fct_reorder(variable, abs(mean_val))) %>%
+  ggplot(aes(contribution, variable, fill = mean_val > 0)) +
+  geom_col(data = ~distinct(., variable, mean_val), 
+           aes(mean_val, variable), 
+           alpha = 0.5) +
+  geom_boxplot(width = 0.5) +
+  theme(legend.position = "none") +
+  scale_fill_viridis_d() +
+  labs(y = NULL)
