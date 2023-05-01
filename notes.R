@@ -1886,3 +1886,33 @@ ames_hash <-
   step_ns(Latitude, Longitude, deg_free = 20)
 
 ames_hash
+
+# Software for model explanations
+# Set-up model agnostic explainers for Ames housing data
+library(DALEXtra)
+vip_features <- c("Neighborhood", "Gr_Liv_Area", "Year_Built", 
+                  "Bldg_Type", "Latitude", "Longitude")
+
+vip_train <- 
+  ames_train %>% 
+  select(all_of(vip_features))
+
+# Explainer for linear model
+explainer_lm <- 
+  explain_tidymodels(
+    lm_fit, 
+    data = vip_train, 
+    y = ames_train$Sale_Price,
+    label = "lm + interactions",
+    verbose = FALSE
+  )
+
+# Explainer for random forest model
+explainer_rf <- 
+  explain_tidymodels(
+    rf_fit, 
+    data = vip_train, 
+    y = ames_train$Sale_Price,
+    label = "random forest",
+    verbose = FALSE
+  )
