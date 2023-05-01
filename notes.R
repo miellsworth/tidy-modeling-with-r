@@ -2031,3 +2031,65 @@ ggplot_imp <- function(...) {
          y = NULL,  fill = NULL,  color = NULL)
 }
 ggplot_imp(vip_lm, vip_rf)
+
+# Global feature importance from local explanations
+# Use DALEX to compute 500 individual profiles for Year Built and then aggreagte
+set.seed(1805)
+pdp_age <- model_profile(explainer_rf, N = 500, variables = "Year_Built")
+
+# Plot results
+ggplot_pdp <- function(obj, x) {
+  
+  p <- 
+    as_tibble(obj$agr_profiles) %>%
+    mutate(`_label_` = stringr::str_remove(`_label_`, "^[^_]*_")) %>%
+    ggplot(aes(`_x_`, `_yhat_`)) +
+    geom_line(data = as_tibble(obj$cp_profiles),
+              aes(x = {{ x }}, group = `_ids_`),
+              linewidth = 0.5, alpha = 0.05, color = "gray50")
+  
+  num_colors <- n_distinct(obj$agr_profiles$`_label_`)
+  
+  if (num_colors > 1) {
+    p <- p + geom_line(aes(color = `_label_`), linewidth = 1.2, alpha = 0.8)
+  } else {
+    p <- p + geom_line(color = "midnightblue", linewidth = 1.2, alpha = 0.8)
+  }
+  
+  p
+}
+
+# Partial dependence profiles for the random forest model focusing on the year built predictor
+ggplot_pdp(pdp_age, Year_Built)  +
+  labs(x = "Year built", 
+       y = "Sale Price (log)", 
+       color = NULL)
+
+# Partial dependence profiles for the random forest model focusing on building type and living area predictors
+set.seed(1806)
+pdp_liv <- model_profile(explainer_rf, N = 1000, 
+                         variables = "Gr_Liv_Area", 
+                         groups = "Bldg_Type")
+
+ggplot_pdp(pdp_liv, Gr_Liv_Area) +
+  scale_x_log10() +
+  scale_color_brewer(palette = "Dark2") +
+  labs(x = "Gross living area", 
+       y = "Sale Price (log)", 
+       color = NULL)
+
+# Partial dependence profiles for the random forest model focusing on building type and living area predictors
+# Faceted by building type
+as_tibble(pdp_liv$agr_profiles) %>%
+  mutate(Bldg_Type = stringr::str_remove(`_label_`, "random forest_")) %>%
+  ggplot(aes(`_x_`, `_yhat_`, color = Bldg_Type)) +
+  geom_line(data = as_tibble(pdp_liv$cp_profiles),
+            aes(x = Gr_Liv_Area, group = `_ids_`),
+            linewidth = 0.5, alpha = 0.1, color = "gray50") +
+  geom_line(linewidth = 1.2, alpha = 0.8, show.legend = FALSE) +
+  scale_x_log10() +
+  facet_wrap(~Bldg_Type) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(x = "Gross living area", 
+       y = "Sale Price (log)", 
+       color = NULL)
