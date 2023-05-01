@@ -2093,3 +2093,15 @@ as_tibble(pdp_liv$agr_profiles) %>%
   labs(x = "Gross living area", 
        y = "Sale Price (log)", 
        color = NULL)
+
+# Review model explanations for bean type predictions
+set.seed(1807)
+vip_beans <- 
+  explain_tidymodels(
+    rda_wflow_fit, 
+    data = bean_train %>% select(-class), 
+    y = bean_train$class,
+    label = "RDA",
+    verbose = FALSE
+  ) %>% 
+  model_parts() 
