@@ -2242,4 +2242,20 @@ res_2020 %>% select(date, contains(".pred"))
 
 res_2020 %>% select(date, ridership, starts_with(".pred"))
 
+# Print the prediction error to show how poor the prediction is in 2020
 res_2020 %>% rmse(ridership, .pred)
+
+# Set-up an applicability domain using PCA to show that
+library(applicable)
+pca_stat <- apd_pca(~ ., data = Chicago_train %>% select(one_of(stations)), 
+                    threshold = 0.99)  # 99% of the variation in the ridership predictors
+pca_stat
+
+# Plot the reference distribution (training set distance distribution)
+autoplot(pca_stat, distance) + labs(x = "distance")
+
+# Print the percentiles of the test set distance to the training set center and distance itself
+score(pca_stat, Chicago_test) %>% select(starts_with("distance"))
+
+# Print the percentiles of the 2020 set distance to the training set center and distance itself
+score(pca_stat, Chicago_2020) %>% select(starts_with("distance"))
