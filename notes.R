@@ -2259,3 +2259,51 @@ score(pca_stat, Chicago_test) %>% select(starts_with("distance"))
 
 # Print the percentiles of the 2020 set distance to the training set center and distance itself
 score(pca_stat, Chicago_2020) %>% select(starts_with("distance"))
+
+# Ensemble models
+# Use the workflow set from previous chapter
+race_results
+
+# Use the stacks package to create an empty data stack
+library(tidymodels)
+library(stacks)
+tidymodels_prefer()
+
+concrete_stack <- 
+  stacks() %>% 
+  add_candidates(race_results)
+
+concrete_stack
+
+# Fit the metamodel
+set.seed(2001)
+ens <- blend_predictions(concrete_stack)
+
+# Plot the default penalization
+autoplot(ens)
+
+# Change the default penalization and plot the result
+set.seed(2002)
+ens <- blend_predictions(concrete_stack, penalty = 10^seq(-2, -0.5, length = 20))
+autoplot(ens)
+
+# Print the details of the meta-learning model
+ens
+
+# Plot the contributions of each model type
+autoplot(ens, "weights") +
+  geom_text(aes(x = weight + 0.01, label = model), hjust = 0) + 
+  theme(legend.position = "none") +
+  lims(x = c(-0.01, 0.8))
+
+# Fit the ensemble model
+ens <- fit_members(ens)
+
+# Test the ensemble model
+reg_metrics <- metric_set(rmse, rsq)
+ens_test_pred <- 
+  predict(ens, concrete_test) %>% 
+  bind_cols(concrete_test)
+
+ens_test_pred %>% 
+  reg_metrics(compressive_strength, .pred)
