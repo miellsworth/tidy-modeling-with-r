@@ -2307,3 +2307,167 @@ ens_test_pred <-
 
 ens_test_pred %>% 
   reg_metrics(compressive_strength, .pred)
+
+# Inferential modeling on biochem graduate students and their publishing record
+library(tidymodels)
+tidymodels_prefer()
+
+data("bioChemists", package = "pscl")
+
+ggplot(bioChemists, aes(x = art)) + 
+  geom_histogram(binwidth = 1, color = "white") + 
+  labs(x = "Number of articles within 3y of graduation")
+
+# Summarize the publishing record of male and female graduate students
+bioChemists %>% 
+  group_by(fem) %>% 
+  summarize(counts = sum(art), n = length(art))
+
+# Two sample poisson test
+poisson.test(c(930, 619), T = 3) %>% 
+  tidy()
+
+# Use the infer package to perform additional hypothesis tests
+library(infer)
+
+observed <- 
+  bioChemists %>%
+  specify(art ~ fem) %>%
+  calculate(stat = "diff in means", order = c("Men", "Women"))
+observed
+
+# Bootstrap distribution to compute confidence interval
+set.seed(2101)
+bootstrapped <- 
+  bioChemists %>%
+  specify(art ~ fem)  %>%
+  generate(reps = 2000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order = c("Men", "Women"))
+bootstrapped
+
+percentile_ci <- get_ci(bootstrapped)
+percentile_ci
+
+# Use infer to show the high level results
+visualize(bootstrapped) +
+    shade_confidence_interval(endpoints = percentile_ci)
+
+# Calculate p-value via permutation test
+set.seed(2102)
+permuted <- 
+  bioChemists %>%
+  specify(art ~ fem)  %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 2000, type = "permute") %>%
+  calculate(stat = "diff in means", order = c("Men", "Women"))
+permuted
+
+# Visualize the observed value
+visualize(permuted) +
+    shade_p_value(obs_stat = observed, direction = "two-sided")
+
+# The actual p-value
+permuted %>%
+  get_p_value(obs_stat = observed, direction = "two-sided")
+
+# Fit a log-linear model on all predictors
+library(poissonreg)
+
+# default engine is 'glm'
+log_lin_spec <- poisson_reg()
+
+log_lin_fit <- 
+  log_lin_spec %>% 
+  fit(art ~ ., data = bioChemists)
+log_lin_fit
+
+tidy(log_lin_fit, conf.int = TRUE, conf.level = 0.90)
+
+# Compute bootstrap confidence intervals
+set.seed(2103)
+glm_boot <- 
+  reg_intervals(art ~ ., data = bioChemists, model_fn = "glm", family = poisson)
+glm_boot
+
+# Test if the phd predictor is associated with the outcome
+log_lin_reduced <- 
+  log_lin_spec %>% 
+  fit(art ~ ment + kid5 + fem + mar, data = bioChemists)
+
+anova(
+  extract_fit_engine(log_lin_reduced),
+  extract_fit_engine(log_lin_fit),
+  test = "LRT"
+) %>%
+  tidy()
+
+# A more complex model
+zero_inflated_spec <- poisson_reg() %>% set_engine("zeroinfl")
+
+zero_inflated_fit <- 
+  zero_inflated_spec %>% 
+  fit(art ~ fem + mar + kid5 + ment | fem + mar + kid5 + phd + ment,
+      data = bioChemists)
+
+zero_inflated_fit
+
+# Test if the new model terms are helpful - this should throw an error
+anova(
+  extract_fit_engine(zero_inflated_fit),
+  extract_fit_engine(log_lin_reduced),
+  test = "LRT"
+) %>%
+  tidy()
+
+# Since anova isn't implemented for zero inflated objects, use AIC
+zero_inflated_fit %>% extract_fit_engine() %>% AIC()
+
+log_lin_reduced   %>% extract_fit_engine() %>% AIC()
+
+# Zero inflated is better because AIC is lower but how much better?
+# Use resampling to find out
+
+# Fit 4000 models, 2000 zip, 2000 glm
+zip_form <- art ~ fem + mar + kid5 + ment | fem + mar + kid5 + phd + ment
+glm_form <- art ~ fem + mar + kid5 + ment
+
+set.seed(2104)
+bootstrap_models <-
+  bootstraps(bioChemists, times = 2000, apparent = TRUE) %>%
+  mutate(
+    glm = map(splits, ~ fit(log_lin_spec,       glm_form, data = analysis(.x))),
+    zip = map(splits, ~ fit(zero_inflated_spec, zip_form, data = analysis(.x)))
+  )
+bootstrap_models
+
+# Extract model fits and corresponding AIC
+bootstrap_models <-
+  bootstrap_models %>%
+  mutate(
+    glm_aic = map_dbl(glm, ~ extract_fit_engine(.x) %>% AIC()),
+    zip_aic = map_dbl(zip, ~ extract_fit_engine(.x) %>% AIC())
+  )
+mean(bootstrap_models$zip_aic < bootstrap_models$glm_aic)
+
+# Accounting for excessive number of zero counts (using ZIP) is preferred
+
+# Create bootstrap intervals for zero probability model coefficients
+bootstrap_models <-
+  bootstrap_models %>%
+  mutate(zero_coefs  = map(zip, ~ tidy(.x, type = "zero")))
+
+# One example:
+bootstrap_models$zero_coefs[[1]]
+
+# Visualize bootstrap coefficients
+bootstrap_models %>% 
+  unnest(zero_coefs) %>% 
+  ggplot(aes(x = estimate)) +
+  geom_histogram(bins = 25, color = "white") + 
+  facet_wrap(~ term, scales = "free_x") + 
+  geom_vline(xintercept = 0, lty = 2, color = "gray70")
+
+# Compute different bootstrap intervals using int_*() functions
+bootstrap_models %>% int_pctl(zero_coefs)
+
+bootstrap_models %>% int_t(zero_coefs)
